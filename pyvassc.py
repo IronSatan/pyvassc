@@ -387,6 +387,41 @@ def installqas ():
             logger.error("***QAS cannot be installed***")# Ask for Debug install
             logger.info(install_missing)
 
+def backup_pam (file_to_backup): # Function to backup PAM files.
+    global debug_flag
+    if debug_flag is True:
+        logger.debug('Backup pam for' + file_to_backup + ' waiting for path exist flag...')
+    if os.path.exists(file_to_backup):
+        if debug_flag is True:
+            logger.debug('path exists...')
+        movedir = script_path + "/pam_backups" # Original DIR
+        if debug_flag is True:
+            logger.debug('movedir variable created: ' + movedir)
+        filename = os.path.basename(file_to_backup)
+        if debug_flag is True:
+            logger.debug('filename variable created: ' + filename)
+        base, extension = os.path.splitext(filename)
+        if debug_flag is True:
+            logger.debug('base and extension variables created: ' + base + ' ' + extension)
+        backup_file = movedir + '/' + base + '_backup'
+        if debug_flag is True:
+            logger.debug('backup_file variable created: ' + backup_file)
+        if not os.path.exists(backup_file):
+            if not os.path.exists(movedir):
+                os.mkdir(movedir)
+            shutil.copy2(file_to_backup, backup_file)
+            logger.info(file_to_backup + ' was backed up to ' + backup_file)
+        else:
+            logger.info('Another backup was detected!')
+            backup_file = movedir + '/' + base + '_backup_' + current_date + '_' + current_time
+            if not os.path.exists(backup_file):
+                if not os.path.exists(movedir):
+                    os.mkdir(movedir)
+                shutil.copy2(file_to_backup, backup_file)
+                logger.info(file_to_backup + ' was backed up to ' + backup_file)
+            else:
+                logger.error('***Backups FAILED***')
+                exit_script(0)
 #
 # END OF FUNCTIONS DEFINITION
 #
@@ -400,6 +435,15 @@ ask_continue()
 installqas()
 remove()
 check_vastool()
+backup_pam('/etc/pam.d/password-auth')# Backups for password-auth PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/login')# Backups for login PAM file used in all OS's
+backup_pam('/etc/pam.d/gdm-password')# Backups for gdm-password PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/gdm-smartcard')# Backups for gdm-password PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/lightdm')# Backups for lightdm PAM file used in Ubuntu and Mint
+backup_pam('/etc/pam.d/lightdm-greeter')# Backups for lightdm-greeter PAM file used in Ubuntu and Mint
+backup_pam('/etc/pam.d/common-auth')# Backups for common-auth PAM file used in Ubuntu and Mint
+backup_pam('/usr/share/mdm/defaults.conf')# Backups for mdm/defaults.conf PAM file used in Ubuntu and Mint
+package_install()# install dependencies per OS
 vasd_config()
 check_displaymanagers()
 manipulate_pam_files('/etc/pam.d/password-auth', line_to_test) # Used in Cent/RHEL/OpenSuse for SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
