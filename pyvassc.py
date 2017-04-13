@@ -357,36 +357,35 @@ def remove (): # This function is called only when debugging is enabled to ask i
 
 def unconfigure (file_input): # This function performs the unconfiguration of the pam modules.
     if os.path.exists(file_input):
-        print ('Unconfiguring ' + file_input)
-        for line in fileinput.input(file_input, inplace=True):
-            if not re.match(line_to_test, line):
-                sys.stdout.write (line)
+        logger.debug in fileinput.input(file_input, inplace=True)
+        if not re.match(line_to_test, line):
+            sys.stdout.write (line)
 
 def installqas ():
     global debug_flag
     if debug_flag is True:
-        print("***Debugging is enabled***")
+        logger.info("***Debugging is enabled***")
         yes = set(['yes','y', 'ye', ''])
         no = set(['no','n'])
         print("***Would you like to install QAS with debugging enabled? (yes/no)***")
-        choice = raw_input().lower()
+        choice = raw_input().lower() # Ask for Debug install
         if choice in yes:
             if os.path.exists('./install.sh'):
                 os.system("sudo ./install.sh -a")
             else:
-                print("***QAS cannot be installed***")
-                print(install_missing)
+                logger.error("***QAS cannot be installed***") # if it cannot find the QAS install.sh file 
+                logger.info(install_missing)
         elif choice in no:
             return()
         else:
             print("Please respond with 'yes' or 'no'")
             installqas()
     else:
-        if os.path.exists('./install.sh'):
+        if os.path.exists('./install.sh'):# install normally if no debugging flag
             os.system("sudo ./install.sh -a")
         else:
-            print("***QAS cannot be installed***")
-            print(install_missing)
+            logger.error("***QAS cannot be installed***")# Ask for Debug install
+            logger.info(install_missing)
 
 #
 # END OF FUNCTIONS DEFINITION
@@ -396,28 +395,20 @@ def installqas ():
 # PROGRAM DEFINITION
 #
 
-#os.system("echo Testing from Python") # Sending command to bash from python
 check_os()
 ask_continue()
 installqas()
 remove()
 check_vastool()
-print (dist_name)
-package_install()
-print (script_path)
 vasd_config()
 check_displaymanagers()
-#file_copy(script_path, '/etc/pam.d', 'test') # Debugging
-#manipulate_pam_files('/etc/pam.d/test', line_to_test) # Test file for debugging purposes (commented out until debugging is needed)
 manipulate_pam_files('/etc/pam.d/password-auth', line_to_test) # Used in Cent/RHEL/OpenSuse for SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
 manipulate_pam_files('/etc/pam.d/login', line_to_test) # Used on all Linux Systems
 manipulate_pam_files('/etc/pam.d/lightdm', line_to_test) # Used with Ubuntu and Mint primarily
 manipulate_pam_files('/etc/pam.d/mdm', line_to_test) # Used on Mint primarily # covered with common-auth
 manipulate_pam_files('/etc/pam.d/lightdm-greeter', line_to_test) # Used with Ubuntu and Mint
-if 'Red' and 'SUSE' not in dist_name:
-    manipulate_pam_files('/etc/pam.d/gdm-password', line_to_test) # Used in Cent/RHEL/OpenSuse with GDM
 manipulate_pam_files('/etc/pam.d/common-auth', line_to_test) # Used with Ubuntu and Mint SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
-print (outro_text)
+print(outro_text)
 exit_script(0)
 
 #
