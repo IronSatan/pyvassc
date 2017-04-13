@@ -1,12 +1,21 @@
 #!/usr/bin/env python
-# Title:    Python QAS Install
+# Title:    Python 2.7 QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
-# Latest Update:   3/30/2017
+# Latest Update:   4/12/2017
 #
 # Description: Python Code to Install/Upgrade
-# Quest Authentication Services Smart Card Configuration
+# Quest Authentication Services Smart Card Configuration at Idaho National Labratories
 #
+# Use: QAS installation, smartcard enforcement, smartcard dependency installation, DOE configuration compliance
+#
+# pyvassc is designed to install QAS 4.1.0 or to upgrade from another version.
+# pyvassc will also manipulate pam configuration files and display manager configuration files to allow for 
+#   smartcard enforcement in order to comply with the HSPD-12 Directive and DOE regulation.
+# pyvassc will install dependencies per OS and QAS requirements to allow for PKCS11 and vassc compatibility
+# pyvassc will join the domain via a prompt for information from the user who initializes the script
+# pyvassc requires su level privleges.
+# SEE man page for vas for additional information on the functionality of vas and the vastool
 import re
 import fileinput
 import os
@@ -19,30 +28,27 @@ import time
 #
 # VARIABLE DEFINITION
 #
-file_to_test = 'nothing'
-line_to_test = 'auth\s*\[success=ok default=die\]\s*pam_localuser.so'
+file_to_test = 'nothing'# set the global variable to be edited later. This will be a path.
+line_to_test = 'auth\s*\[success=ok default=die\]\s*pam_localuser.so' # Regex for smartcard enforcement line
 dist_name = platform.linux_distribution()[0] # For Linux Distro's store the distribution name
 dist_version = platform.linux_distribution()[1] # For Linux Distro's store the version number
-smartcard_line = 'auth\s*requisite\s*pam_vas_smartcard\.so\s*echo_return'
+smartcard_line = 'auth\s*requisite\s*pam_vas_smartcard\.so\s*echo_return' # regex line for detecting where to insert enforcement
 mdm_line = '\AIncludeAll=true.*' # variable to detect MDM's include all = true
-mdm_pam_line = '\Aauth\s*sufficient\s*pam_succeed_if.so\s*user\s*ingroup\s*nopasswdlogin'
+mdm_pam_line = '\Aauth\s*sufficient\s*pam_succeed_if.so\s*user\s*ingroup\s*nopasswdlogin' #REgex for MDM 
 script_path = os.path.abspath(os.path.dirname(sys.argv[0])) # Location script is ran from.
-current_time = time.strftime("%H:%M:%S")
-current_date = time.strftime("%d/%m/%Y")
-log_file_path = 'QASscript_' + dist_name + dist_version + '_' + current_date + '_' + current_time + '.log'
-debug_flag = False
+current_time = time.strftime("%H:%M:%S") # time variable
+current_date = time.strftime("%d-%m-%Y") # date variable
+log_file_path = 'QASscript_' + dist_name + dist_version + '_' + current_date + '_' + current_time + '.log' # Where the log is being saved
+debug_flag = False # variable to call when you need to debug
 intro_text = """
 ##################################################################
 #Title:    Python QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
-# Latest Update:   3/30/2017
+# Latest Update:   4/12/2017
 #
 # Description: Script to Install/Upgrade
-# Quest Authentication Services Smart Card Configuration
-#
-# *** NOTE: This script must be ran from within the same folder as ***
-# *** the install.sh file                                          ***
+# Quest Authentication Services Smart Card Configuration 
 #
 # This script is to be used on the following OS's:
 # CentOS 7+
