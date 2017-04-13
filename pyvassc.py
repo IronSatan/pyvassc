@@ -1,12 +1,21 @@
 #!/usr/bin/env python
-# Title:    Python QAS Install
+# Title:    Python 2.7 QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
-# Latest Update:   3/30/2017
+# Latest Update:   4/12/2017
 #
 # Description: Python Code to Install/Upgrade
-# Quest Authentication Services Smart Card Configuration
+# Quest Authentication Services Smart Card Configuration at Idaho National Labratories
 #
+# Use: QAS installation, smartcard enforcement, smartcard dependency installation, DOE configuration compliance
+#
+# pyvassc is designed to install QAS 4.1.0 or to upgrade from another version.
+# pyvassc will also manipulate pam configuration files and display manager configuration files to allow for 
+#   smartcard enforcement in order to comply with the HSPD-12 Directive and DOE regulation.
+# pyvassc will install dependencies per OS and QAS requirements to allow for PKCS11 and vassc compatibility
+# pyvassc will join the domain via a prompt for information from the user who initializes the script
+# pyvassc requires su level privleges.
+# SEE man page for vas for additional information on the functionality of vas and the vastool
 import re
 import fileinput
 import os
@@ -19,30 +28,27 @@ import time
 #
 # VARIABLE DEFINITION
 #
-file_to_test = 'nothing'
-line_to_test = 'auth\s*\[success=ok default=die\]\s*pam_localuser.so'
+file_to_test = 'nothing'# set the global variable to be edited later. This will be a path.
+line_to_test = 'auth\s*\[success=ok default=die\]\s*pam_localuser.so' # Regex for smartcard enforcement line
 dist_name = platform.linux_distribution()[0] # For Linux Distro's store the distribution name
 dist_version = platform.linux_distribution()[1] # For Linux Distro's store the version number
-smartcard_line = 'auth\s*requisite\s*pam_vas_smartcard\.so\s*echo_return'
+smartcard_line = 'auth\s*requisite\s*pam_vas_smartcard\.so\s*echo_return' # regex line for detecting where to insert enforcement
 mdm_line = '\AIncludeAll=true.*' # variable to detect MDM's include all = true
-mdm_pam_line = '\Aauth\s*sufficient\s*pam_succeed_if.so\s*user\s*ingroup\s*nopasswdlogin'
+mdm_pam_line = '\Aauth\s*sufficient\s*pam_succeed_if.so\s*user\s*ingroup\s*nopasswdlogin' #REgex for MDM 
 script_path = os.path.abspath(os.path.dirname(sys.argv[0])) # Location script is ran from.
-current_time = time.strftime("%H:%M:%S")
-current_date = time.strftime("%d/%m/%Y")
-log_file_path = 'QASscript_' + dist_name + dist_version + '_' + current_date + '_' + current_time + '.log'
-debug_flag = False
+current_time = time.strftime("%H:%M:%S") # time variable
+current_date = time.strftime("%d-%m-%Y") # date variable
+log_file_path = 'QASscript_' + dist_name + dist_version + '_' + current_date + '_' + current_time + '.log' # Where the log is being saved
+debug_flag = False # variable to call when you need to debug
 intro_text = """
 ##################################################################
 #Title:    Python QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
-# Latest Update:   3/30/2017
+# Latest Update:   4/12/2017
 #
 # Description: Script to Install/Upgrade
-# Quest Authentication Services Smart Card Configuration
-#
-# *** NOTE: This script must be ran from within the same folder as ***
-# *** the install.sh file                                          ***
+# Quest Authentication Services Smart Card Configuration 
 #
 # This script is to be used on the following OS's:
 # CentOS 7+
@@ -75,6 +81,31 @@ script from there.
 #
 
 #
+# LOGGING DEFINITION
+#
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# create file handler and set level to debug
+file_handler = logging.FileHandler(log_file_path)
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(formatter)
+
+# create stream handler and set level to info then print that stream to console
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+formatterstream = logging.Formatter("%(levelname)s - %(message)s")
+stream_handler.setFormatter(formatterstream)
+
+# add Handlers to logger
+logger.addHandler(stream_handler)
+logger.addHandler(file_handler)
+#
+# END OF LOGGING DEFINITION
+#
+
+#
 # FUNCTIONS DEFINITION
 #
 def check_exists(local_file_to_test, local_line_to_test): #Checks to see if auth    [success=ok default=die]    pam_localuser.so already exists in the file before making any changes.
@@ -83,7 +114,7 @@ def check_exists(local_file_to_test, local_line_to_test): #Checks to see if auth
     for line in test_file:
         if line_matched_check is False :
             if re.match(local_line_to_test, line):
-                print('Line exists already')
+                logger.info(local_line_to_test + ' Line exists already in: ' + local_file_to_test)
                 line_matched_check = True
                 return True
 
@@ -94,24 +125,25 @@ def check_os(): # Function to determine OS and whether or not to continue
         print ("Your OS:"),
         print (dist_name),
         print (dist_version)
+        logger.debug(dist_name + ' ' + dist_version)
         return()
             # End Linux...
     elif platform == "darwin": #OS X...
-        print ("Your OS is MAC")
-        print ("This script is for Linux Machines only...")
+        logger.error("Your OS is MAC")
+        logger.error("This script is for Linux Machines only...")
         exit_script(0)
             # End OS X...
     elif platform == "win32": # Windows...
-        print ("Your OS is Windows")
-        print ("This script is for Linux Machines only...")
+        logger.error("Your OS is Windows")
+        logger.error("This script is for Linux Machines only...")
         exit_script(0)
             # End Windows...
     else:
-        print ("I cannot determine your Operating System type...")
+        logger.error("I cannot determine your Operating System type...") # tell user that the OS cannot be determined and quit
         exit_script(0)
 
 def exit_script(exit_code): # Function to exit script, will build exception handling in the future
-    print("Exiting script.")
+    logger.info("Exiting script.")
     sys.exit(exit_code)
 
 def manipulate_pam_files(local_file_to_test, local_line_to_test):
@@ -125,19 +157,19 @@ def manipulate_pam_files(local_file_to_test, local_line_to_test):
                 if re.match(smartcard_line, line):   # Testing to ensure file is setup for smartcard auth before enforcing it.
                     line_matched = True
                     if check_exists(local_file_to_test, local_line_to_test): #Testing to see if pam_localuser.so already exists.
-                        print(local_file_to_test + " is already configured! Not making any changes...") # If it does exist make no changes.
+                        logger.debug(local_file_to_test + " is already configured! Not making any changes...") # If it does exist make no changes.
                     else:
                         for line in fileinput.input(local_file_to_test, inplace=1):
                             print (line),
                             if re.match(smartcard_line, line):
                                 print ('auth    [success=ok default=die]    pam_localuser.so') # Enforce via pam_local.so module
-                        print ('Configuring' + local_file_to_test) # Configure Message. Inform user of which files are being configured
+                        logger.debug('Configuring' + local_file_to_test) # Configure Message. Inform user of which files are being configured
     if file_exists is True:
         if line_matched is False: # Debug to see if file is smartcard configured
-            print (local_file_to_test + " check failed")
-            print ("This means the files exists but is not configured for smartcard use.")
-            print ("Please configure " + local_file_to_test + " for smartcards.")
-            print ("Then restart this script.")
+            logger.error(local_file_to_test + " check failed")
+            logger.error("This means the files exists but is not configured for smartcard use.")
+            logger.error("Please configure " + local_file_to_test + " for smartcards.")
+            logger.error("Then restart this script.")
             exit_script(0)
 
 def file_copy(src_path, dst_path, file):
@@ -145,29 +177,40 @@ def file_copy(src_path, dst_path, file):
     file_dstpath = dst_path + "/" + file
     file_srcpath = src_path + "/" + file
     if not os.path.exists(dst_path):
-        os.makedir(dst_path)
+        os.mkdir(dst_path)
+        logger.debug('Directory made: ' + dst_path)
     try:
         shutil.copy2(file_srcpath, file_dstpath)
+        logger.debug('File copied to: ' + file_dstpath)
     except shutil.Error as e:
-        print(file_dstpath + ' not copied. Error: %s' % e)
+        logger.error(file_dstpath + ' not copied. Error: %s' % e)
     except OSError as e:
-        print(file_dstpath + ' not copied. Error: %s' % e)
+        logger.exception(file_dstpath + ' not copied. Error: %s' % e)
 
 def check_displaymanagers (): # Check for display managers.
     line_matched = False
     os.system("sudo /opt/quest/bin/vastool smartcard configure pam login") # All OS's need this file configured
     if os.path.exists('/etc/pam.d/common-auth'):
-        print ('Configuring /etc/pam.d/common-auth')
+        logger.debug('Configuring /etc/pam.d/common-auth')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam common-auth") # common-auth
     if os.path.exists('/etc/pam.d/common-auth-pc'):
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam common-auth-pc")
     if os.path.exists('/etc/pam.d/common-auth-smartcard'):
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam common-auth-smartcard")
     if os.path.exists('/etc/pam.d/password-auth'):
-        print ('Configuring /etc/pam.d/password-auth')
+        logger.debug('Configuring /etc/pam.d/password-auth')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam password-auth") # password-auth
+    if os.path.exists('/etc/pam.d/password-auth-ac'):
+        logger.debug('Configuring /etc/pam.d/password-auth-ac in case password-auth is inaccessible...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pam password-auth-ac") # password-auth-ac
+    if os.path.exists('/etc/pam.d/smartcard-auth-ac'):
+        logger.debug('Configuring /etc/pam.d/smartcard-auth-ac in case smartcard-auth is inaccessible...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pam smartcard-auth-ac") # smartcard-auth-ac
+    if os.path.exists('/etc/pam.d/smartcard-auth-ac'):
+        logger.debug('Configuring /etc/pam.d/smartcard-auth')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pam smartcard-auth") # smartcard-auth
     if os.path.exists('/etc/pam.d/mdm'): # MDM
-        print ('MDM was detected, configuring...')
+        logger.debug('MDM was detected, configuring...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam mdm")
         test_file = open('/etc/pam.d/mdm', "r") # Testing MDM for the smartcard line, primarily because it fails often.
         for line in test_file:
@@ -182,78 +225,84 @@ def check_displaymanagers (): # Check for display managers.
         if os.path.exists('/usr/share/mdm/defaults.conf'):
             os.system("sudo sed -i 's/IncludeAll=true/IncludeAll=false/g' '/usr/share/mdm/defaults.conf'")# change the MDM Defaults to not show all users on login screen.
             if debug_flag is True:
-                print('MDM /usr/share/mdm/defaults.conf has been configured')
-            print('You will need to restart the mdm service after this script in order to function properly.')
+                logger.debug('MDM /usr/share/mdm/defaults.conf has been configured')
+            logger.info('You will need to restart the mdm service after this script in order to function properly.') # Let user know they need to restart mdm after running this.
         else:
-            print ('***/usr/share/mdm/defaults.conf was not detected. MDM was not configured correctly.***')
+            logger.error('***/usr/share/mdm/defaults.conf was not detected. MDM was not configured correctly.***')
     if os.path.exists('/etc/pam.d/lightdm'): #LightDM
-        print ('LightDM was detected, configuring...')
+        logger.debug('LightDM was detected, configuring...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam lightdm")
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam lightdm-greeter")
         if os.path.exists(script_path + '/10-ubuntu.conf'):
             file_copy(script_path, '/etc/lightdm/lightdm.conf.d', '10-ubuntu.conf')
         else:
-            print ('***Script was not ran from original location. LightDM has not been completely configured.***')
+            logger.error('***Script was not ran from original location. LightDM has not been completely configured.***')
     if os.path.exists('/etc/pam.d/gdm'): #GDM
-        print ('GDM was detected, configuring...')
+        logger.debug('GDM was detected, configuring...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam gdm")
-    if 'Red' not in dist_name:  
-        if os.path.exists('/etc/pam.d/gdm-password'):
-            print ('GDM was detected, configuring /etc/pam.d/gdm-password...')
-            os.system("sudo /opt/quest/bin/vastool smartcard configure pam gdm-password")
+    if os.path.exists('/etc/pam.d/gdm-smartcard-ac'):
+        logger.debug('GDM was detected, configuring /etc/pam.d/gdm-smartcard...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pam gdm-smartcard-ac")
     if os.path.exists('/etc/pam.d/sddm'): #SDDM - We don't currently have it configured but we would like to find a solution.
-        print ('SDDM was detected, however, we have no current configuration for SDDM.')
-        print ('Please use GDM or LightDM for your primary display manager.')
+        logger.error('SDDM was detected, however, we have no current configuration for SDDM.')
+        logger.error('Please use GDM or LightDM for your primary display manager.')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam sddm")
         
 def vasd_config (): # Configure vasd with the vastool
     os.system("sudo /opt/quest/bin/vastool configure vas vasd username-attr-name samAccountName") # Configure vasd to allow samAccountName as the primary human-readable identifier
+    logger.debug("username-attr-name samAccountName set")
     os.system("sudo /opt/quest/bin/vastool configure vas vasd allow-upn-login True") # Configure vasd to allow UPN login for smartcards
+    logger.debug("allow-upn-login True set")
 
 def package_install (): # run package managers for each OS
     if 'CentOS' in dist_name:
-        print ("CENTOS MATCHED!")
+        logger.info("CENTOS MATCHED!")
         os.system("sudo yum install -y coolkey opensc esc pam_pkcs11 pcsc-lite ccid opencryptoki libc.so.6 libresolv.so.2 librt.so.1 libpam.so.0")
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
         os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Ubuntu' in dist_name:
-        print ("Ubuntu MATCHED!")
+        logger.info("Ubuntu MATCHED!")
         os.system("sudo apt-get install -y libpcsclite1 pcscd pcsc-tools pkg-config opensc coolkey libccid libacsccid1 ")
         os.system("sudo dpkg -iE ./add-ons/smartcard/linux-x86_64/vassc_4.1.0-21854_amd64.deb") # VASSC deb package install, will not install if already installed.
         os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
         os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'SUSE' in dist_name:
-        print ("SUSE MATCHED!")
+        logger.info("SUSE MATCHED!")
         os.system("sudo zypper install -y opensc pam_pkcs11 pcsc-lite pcsc-ccid openCryptoki libc.so.6 libresolv.so.2 librt.so.1 libpam.so.0") #Zypper dependencies package installs
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
         os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Mint' in dist_name:
-        print ("Mint MATCHED!")
+        logger.info("Mint MATCHED!")
         os.system("sudo apt-get install -y libpcsclite1 pcscd pcsc-tools pkg-config opensc coolkey libccid libacsccid1 ")
         os.system("sudo dpkg -iE ./add-ons/smartcard/linux-x86_64/vassc_4.1.0-21854_amd64.deb") # VASSC deb package install, will not install if already installed.
         os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
         if os.path.exists('/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so'):
             os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so")
         if os.path.exists('/usr/lib64/opensc-pkcs11.so'):
             os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Red' in dist_name:
-        print ("Red MATCHED!")
+        logger.info("Red MATCHED!")
         os.system("sudo yum install -y coolkey esc pam_pkcs11 pcsc-lite ccid opencryptoki libc.so.6 libresolv.so.2 librt.so.1 libpam.so.0")
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
         return()
         
 def check_vastool (): # ensure VAS/QAS is installed before allowing script to run.
     if os.path.exists('/opt/quest/bin/vastool'):
         return()
     else:
-        print ("VAS/QAS has not been installed. Please reinstall QAS and run the script again.")
+        logger.critical("VAS/QAS has not been installed. Please reinstall QAS and run the script again.")
         exit_script(0)
         
 def ask_continue (): # Verify if user wants to configure QAS and has the option to enable debugging mode
@@ -269,20 +318,20 @@ def ask_continue (): # Verify if user wants to configure QAS and has the option 
     elif choice in debug: 
         debug_flag = True
         if debug_flag is True:
-            print("***DEBUGGING ENABLED***")
+            logger.info("***DEBUGGING ENABLED***")
     elif choice in no:
         exit_script(0)
     else:
-        print("Please respond with 'yes' or 'no'")
+        logger.info("Please respond with 'yes' or 'no'")
         ask_continue ()# Just ask if the user wishes to continue
 
 def remove (): # This function is called only when debugging is enabled to ask if the user wants to unconfigure QAS files that are not unconfigured normally when removing QAS.
     global debug_flag
     if debug_flag is True:
-        print("Debug Flag was successful")
+        logger.debug("Debug Flag was successful")
         yes = set(['yes','y', 'ye', ''])
         no = set(['no','n'])
-        print("***Would you like to remove QAS? (yes/no)***")
+        logger.info("***Would you like to remove QAS? (yes/no)***")
         choice = raw_input().lower()
         if choice in yes:
             unconfigure('/etc/pam.d/login')
@@ -294,11 +343,12 @@ def remove (): # This function is called only when debugging is enabled to ask i
             unconfigure('/etc/pam.d/common-auth')
             if os.path.exists('./install.sh'):
                 os.system("sudo ./install.sh remove")
-                print("***QAS has been removed and unconfigured***")
+                logger.info("***QAS has been removed and unconfigured***")
+                exit_script(0)
             else:
-                print("***QAS has been unconfigured but not removed***")
+                logger.error("***QAS has been unconfigured but not removed***")
                 print(install_missing)
-            exit_script(0)
+                exit_script(0)
         elif choice in no:
             return()
         else:
@@ -307,37 +357,71 @@ def remove (): # This function is called only when debugging is enabled to ask i
 
 def unconfigure (file_input): # This function performs the unconfiguration of the pam modules.
     if os.path.exists(file_input):
-        print ('Unconfiguring ' + file_input)
-        for line in fileinput.input(file_input, inplace=True):
-            if not re.match(line_to_test, line):
-                sys.stdout.write (line)
+        logger.debug in fileinput.input(file_input, inplace=True)
+        if not re.match(line_to_test, line):
+            sys.stdout.write (line)
 
 def installqas ():
     global debug_flag
     if debug_flag is True:
-        print("***Debugging is enabled***")
+        logger.info("***Debugging is enabled***")
         yes = set(['yes','y', 'ye', ''])
         no = set(['no','n'])
         print("***Would you like to install QAS with debugging enabled? (yes/no)***")
-        choice = raw_input().lower()
+        choice = raw_input().lower() # Ask for Debug install
         if choice in yes:
             if os.path.exists('./install.sh'):
                 os.system("sudo ./install.sh -a")
             else:
-                print("***QAS cannot be installed***")
-                print(install_missing)
+                logger.error("***QAS cannot be installed***") # if it cannot find the QAS install.sh file 
+                logger.info(install_missing)
         elif choice in no:
             return()
         else:
             print("Please respond with 'yes' or 'no'")
             installqas()
     else:
-        if os.path.exists('./install.sh'):
+        if os.path.exists('./install.sh'):# install normally if no debugging flag
             os.system("sudo ./install.sh -a")
         else:
-            print("***QAS cannot be installed***")
-            print(install_missing)
+            logger.error("***QAS cannot be installed***")# Ask for Debug install
+            logger.info(install_missing)
 
+def backup_pam (file_to_backup): # Function to backup PAM files.
+    global debug_flag
+    if debug_flag is True:
+        logger.debug('Backup pam for' + file_to_backup + ' waiting for path exist flag...')
+    if os.path.exists(file_to_backup):
+        if debug_flag is True:
+            logger.debug('path exists...')
+        movedir = script_path + "/pam_backups" # Original DIR
+        if debug_flag is True:
+            logger.debug('movedir variable created: ' + movedir)
+        filename = os.path.basename(file_to_backup)
+        if debug_flag is True:
+            logger.debug('filename variable created: ' + filename)
+        base, extension = os.path.splitext(filename)
+        if debug_flag is True:
+            logger.debug('base and extension variables created: ' + base + ' ' + extension)
+        backup_file = movedir + '/' + base + '_backup'
+        if debug_flag is True:
+            logger.debug('backup_file variable created: ' + backup_file)
+        if not os.path.exists(backup_file):
+            if not os.path.exists(movedir):
+                os.mkdir(movedir)
+            shutil.copy2(file_to_backup, backup_file)
+            logger.info(file_to_backup + ' was backed up to ' + backup_file)
+        else:
+            logger.info('Another backup was detected!')
+            backup_file = movedir + '/' + base + '_backup_' + current_date + '_' + current_time
+            if not os.path.exists(backup_file):
+                if not os.path.exists(movedir):
+                    os.mkdir(movedir)
+                shutil.copy2(file_to_backup, backup_file)
+                logger.info(file_to_backup + ' was backed up to ' + backup_file)
+            else:
+                logger.error('***Backups FAILED***')
+                exit_script(0)
 #
 # END OF FUNCTIONS DEFINITION
 #
@@ -346,28 +430,29 @@ def installqas ():
 # PROGRAM DEFINITION
 #
 
-#os.system("echo Testing from Python") # Sending command to bash from python
 check_os()
 ask_continue()
 installqas()
 remove()
 check_vastool()
-print (dist_name)
-package_install()
-print (script_path)
+backup_pam('/etc/pam.d/password-auth')# Backups for password-auth PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/login')# Backups for login PAM file used in all OS's
+backup_pam('/etc/pam.d/gdm-password')# Backups for gdm-password PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/gdm-smartcard')# Backups for gdm-password PAM file used in Cent/RHEL/OpenSuse
+backup_pam('/etc/pam.d/lightdm')# Backups for lightdm PAM file used in Ubuntu and Mint
+backup_pam('/etc/pam.d/lightdm-greeter')# Backups for lightdm-greeter PAM file used in Ubuntu and Mint
+backup_pam('/etc/pam.d/common-auth')# Backups for common-auth PAM file used in Ubuntu and Mint
+backup_pam('/usr/share/mdm/defaults.conf')# Backups for mdm/defaults.conf PAM file used in Ubuntu and Mint
+package_install()# install dependencies per OS
 vasd_config()
 check_displaymanagers()
-#file_copy(script_path, '/etc/pam.d', 'test') # Debugging
-#manipulate_pam_files('/etc/pam.d/test', line_to_test) # Test file for debugging purposes (commented out until debugging is needed)
 manipulate_pam_files('/etc/pam.d/password-auth', line_to_test) # Used in Cent/RHEL/OpenSuse for SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
 manipulate_pam_files('/etc/pam.d/login', line_to_test) # Used on all Linux Systems
 manipulate_pam_files('/etc/pam.d/lightdm', line_to_test) # Used with Ubuntu and Mint primarily
 manipulate_pam_files('/etc/pam.d/mdm', line_to_test) # Used on Mint primarily # covered with common-auth
 manipulate_pam_files('/etc/pam.d/lightdm-greeter', line_to_test) # Used with Ubuntu and Mint
-if 'Red' and 'SUSE' not in dist_name:
-    manipulate_pam_files('/etc/pam.d/gdm-password', line_to_test) # Used in Cent/RHEL/OpenSuse with GDM
 manipulate_pam_files('/etc/pam.d/common-auth', line_to_test) # Used with Ubuntu and Mint SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
-print (outro_text)
+print(outro_text)
 exit_script(0)
 
 #
