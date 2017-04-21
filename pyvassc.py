@@ -5,13 +5,13 @@
 # Latest Update:   4/12/2017
 #
 # Description: Python Code to Install/Upgrade
-# Quest Authentication Services Smart Card Configuration at Idaho National Labratories
+# Quest Authentication Services Smart Card Configuration
 #
-# Use: QAS installation, smartcard enforcement, smartcard dependency installation, DOE configuration compliance
+# Use: QAS installation, smartcard enforcement, smartcard dependency installation, configuration compliance
 #
-# pyvassc is designed to install QAS 4.1.0 or to upgrade from another version.
+# pyvassc is designed to install QAS 4.1.0 or to upgrade from another version to the labwide current version.
 # pyvassc will also manipulate pam configuration files and display manager configuration files to allow for 
-#   smartcard enforcement in order to comply with the HSPD-12 Directive and DOE regulation.
+# smartcard enforcement in order to comply with the HSPD-12 Directive and DOE regulation.
 # pyvassc will install dependencies per OS and QAS requirements to allow for PKCS11 and vassc compatibility
 # pyvassc will join the domain via a prompt for information from the user who initializes the script
 # pyvassc requires su level privleges.
@@ -35,6 +35,7 @@ dist_version = platform.linux_distribution()[1] # For Linux Distro's store the v
 smartcard_line = 'auth\s*requisite\s*pam_vas_smartcard\.so\s*echo_return' # regex line for detecting where to insert enforcement
 mdm_line = '\AIncludeAll=true.*' # variable to detect MDM's include all = true
 mdm_pam_line = '\Aauth\s*sufficient\s*pam_succeed_if.so\s*user\s*ingroup\s*nopasswdlogin' #REgex for MDM 
+smartcard_auth_pam_line = '\Aauth\s*required\s*pam_env.so' #REgex for smartcard-auth 
 script_path = os.path.abspath(os.path.dirname(sys.argv[0])) # Location script is ran from.
 current_time = time.strftime("%H:%M:%S") # time variable
 current_date = time.strftime("%d-%m-%Y") # date variable
@@ -45,7 +46,7 @@ intro_text = """
 #Title:    Python QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
-# Latest Update:   4/12/2017
+# Latest Update:   3/14/2017
 #
 # Description: Script to Install/Upgrade
 # Quest Authentication Services Smart Card Configuration 
@@ -56,6 +57,7 @@ intro_text = """
 # OpenSuse Leap 42.2+
 # Mint 18.3+
 # RHEL 7.3+
+# Oracle 7.3
 #
 # If you are utilizing this script on any other OS you
 # accept all risks and responsibilities for any data lost
@@ -114,7 +116,7 @@ def check_exists(local_file_to_test, local_line_to_test): #Checks to see if auth
     for line in test_file:
         if line_matched_check is False :
             if re.match(local_line_to_test, line):
-                logger.info(local_line_to_test + ' Line exists already in: ' + local_file_to_test)
+                logger.debug(local_line_to_test + ' Line exists already in: ' + local_file_to_test)
                 line_matched_check = True
                 return True
 
@@ -188,6 +190,8 @@ def file_copy(src_path, dst_path, file):
         logger.exception(file_dstpath + ' not copied. Error: %s' % e)
 
 def check_displaymanagers (): # Check for display managers.
+    yes = set(['yes','y', 'ye', ''])
+    no = set(['no','n'])
     line_matched = False
     os.system("sudo /opt/quest/bin/vastool smartcard configure pam login") # All OS's need this file configured
     if os.path.exists('/etc/pam.d/common-auth'):
@@ -206,9 +210,21 @@ def check_displaymanagers (): # Check for display managers.
     if os.path.exists('/etc/pam.d/smartcard-auth-ac'):
         logger.debug('Configuring /etc/pam.d/smartcard-auth-ac in case smartcard-auth is inaccessible...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam smartcard-auth-ac") # smartcard-auth-ac
-    if os.path.exists('/etc/pam.d/smartcard-auth-ac'):
+    if os.path.exists('/etc/pam.d/smartcard-auth'):
         logger.debug('Configuring /etc/pam.d/smartcard-auth')
-        os.system("sudo /opt/quest/bin/vastool smartcard configure pam smartcard-auth") # smartcard-auth
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pam smartcard-auth")        # smartcard-auth
+        test_file = open('/etc/pam.d/smartcard-auth', "r") # Testing smartcard-auth for the smartcard line, primarily because it fails often.
+        for line in test_file:
+            if re.match(smartcard_line, line):
+                line_matched = True
+                logger.debug('Line in /etc/pam.d/smartcard-auth FOUND no extra configuration needed...') # return message in debug if line already exists
+        if line_matched is False: # If line does not exist we need to search for the correct location to place the file.
+            for line in fileinput.input('/etc/pam.d/smartcard-auth', inplace=1):
+                print (line),
+                if re.match(smartcard_auth_pam_line, line):
+                    print ('auth	sufficient	pam_vas_smartcard.so')
+                    print ('auth	requisite	pam_vas_smartcard.so echo_return')
+            logger.debug('Line in /etc/pam.d/smartcard-auth NOT found configuration needed...') # return message in debug if line does not exist
     if os.path.exists('/etc/pam.d/mdm'): # MDM
         logger.debug('MDM was detected, configuring...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam mdm")
@@ -233,6 +249,16 @@ def check_displaymanagers (): # Check for display managers.
         logger.debug('LightDM was detected, configuring...')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam lightdm")
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam lightdm-greeter")
+        test_file = open('/etc/pam.d/lightdm', "r") # Testing LightDM for the smartcard line, primarily because it fails often.
+        for line in test_file:
+            if re.match(smartcard_line, line):
+                line_matched = True
+        if line_matched is False:
+            for line in fileinput.input('/etc/pam.d/lightdm', inplace=1):
+                print (line),
+                if re.match(mdm_pam_line, line):
+                    print ('auth	sufficient	pam_vas_smartcard.so')
+                    print ('auth	requisite	pam_vas_smartcard.so echo_return')
         if os.path.exists(script_path + '/10-ubuntu.conf'):
             file_copy(script_path, '/etc/lightdm/lightdm.conf.d', '10-ubuntu.conf')
         else:
@@ -247,12 +273,50 @@ def check_displaymanagers (): # Check for display managers.
         logger.error('SDDM was detected, however, we have no current configuration for SDDM.')
         logger.error('Please use GDM or LightDM for your primary display manager.')
         os.system("sudo /opt/quest/bin/vastool smartcard configure pam sddm")
+    if os.path.exists('/etc/selinux/config'):
+        print("SELinux has been detected and must be disabled")
+        print("Would you like to disable SELinux now?")
+        choice = raw_input().lower()
+        if choice in yes:
+            os.system("sudo sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' '/etc/selinux/config'")
+            logger.info('SELINUX has been disabled or is already disabled')
+            logger.info('You will need to restart your machine after this script in order to function properly.')
+            return()
+        elif choice in no:
+            logger.info("SELinux was not disabled, smartcard enforcement cannot be ensured...")
+            return()
+        else:
+            logger.info("Yes or no was not selected, defaulting to yes...")
+            os.system("sudo sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' '/etc/selinux/config'")
+            logger.info('SELINUX has been disabled')
+            logger.info('You will need to restart your machine after this script in order to function properly.')#defualt to yes if a bad choice is chosen.
+            return()
         
 def vasd_config (): # Configure vasd with the vastool
     os.system("sudo /opt/quest/bin/vastool configure vas vasd username-attr-name samAccountName") # Configure vasd to allow samAccountName as the primary human-readable identifier
     logger.debug("username-attr-name samAccountName set")
     os.system("sudo /opt/quest/bin/vastool configure vas vasd allow-upn-login True") # Configure vasd to allow UPN login for smartcards
     logger.debug("allow-upn-login True set")
+    
+def pkcs11_config (): # check for pkcs11 library and select the one based on which files exist
+    if os.path.exists('/usr/lib64/opensc-pkcs11.so'):
+        logger.debug('/usr/lib64/opensc-pkcs11.so detected configuring...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so") # prefer opensc pkcs11 library
+        return()
+    elif os.path.exists('/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so'):
+        logger.debug('/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so detected configuring...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so") # check for alt opensc pkcs11 library
+        return()
+    elif os.path.exists('/usr/lib64/pkcs11/libcoolkeypk11.so'):
+        logger.debug('/usr/lib64/pkcs11/libcoolkeypk11.so detected configuring...')
+        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/pkcs11/libcoolkeypk11.so") # check for coolkey pkcs11 library
+        return()
+    else:
+        logger.error('No PKCS11 Library detected, something went wrong...')
+        logger.error('Please verify OpenSC has been installed correctly and is not missing dependencies')
+        os.system("sudo updatedb") #update the locate db if no pkcs11 library can be found
+        logger.debug(subprocess.check_output("sudo locate pkcs11.so", shell=True)) # use locate library to send the locate search to logs
+        exit_script(0)
 
 def package_install (): # run package managers for each OS
     if 'CentOS' in dist_name:
@@ -261,15 +325,13 @@ def package_install (): # run package managers for each OS
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
         logger.debug("pcscd restarted")
-        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Ubuntu' in dist_name:
         logger.info("Ubuntu MATCHED!")
-        os.system("sudo apt-get install -y libpcsclite1 pcscd pcsc-tools pkg-config opensc coolkey libccid libacsccid1 ")
+        os.system("sudo apt-get install -y libpcsclite1 pcscd pcsc-tools pkg-config opensc coolkey libccid libacsccid1")
         os.system("sudo dpkg -iE ./add-ons/smartcard/linux-x86_64/vassc_4.1.0-21854_amd64.deb") # VASSC deb package install, will not install if already installed.
         os.system("sudo systemctl restart pcscd")
         logger.debug("pcscd restarted")
-        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'SUSE' in dist_name:
         logger.info("SUSE MATCHED!")
@@ -277,7 +339,6 @@ def package_install (): # run package managers for each OS
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
         logger.debug("pcscd restarted")
-        os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Mint' in dist_name:
         logger.info("Mint MATCHED!")
@@ -285,14 +346,17 @@ def package_install (): # run package managers for each OS
         os.system("sudo dpkg -iE ./add-ons/smartcard/linux-x86_64/vassc_4.1.0-21854_amd64.deb") # VASSC deb package install, will not install if already installed.
         os.system("sudo systemctl restart pcscd")
         logger.debug("pcscd restarted")
-        if os.path.exists('/usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so'):
-            os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib/x86_64-linux-gnu/pkcs11/opensc-pkcs11.so")
-        if os.path.exists('/usr/lib64/opensc-pkcs11.so'):
-            os.system("sudo /opt/quest/bin/vastool smartcard configure pkcs11 lib /usr/lib64/opensc-pkcs11.so")
         return()
     elif 'Red' in dist_name:
         logger.info("Red MATCHED!")
         os.system("sudo yum install -y coolkey esc pam_pkcs11 pcsc-lite ccid opencryptoki libc.so.6 libresolv.so.2 librt.so.1 libpam.so.0")
+        os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
+        os.system("sudo systemctl restart pcscd")
+        logger.debug("pcscd restarted")
+        return()
+    elif 'Oracle' in dist_name:
+        logger.info("Oracle MATCHED!")
+        os.system("sudo yum install -y coolkey pam_pkcs11 pcsc-lite ccid opencryptoki libc.so.6 libresolv.so.2 librt.so.1 libpam.so.0")
         os.system("sudo rpm -i ./add-ons/smartcard/linux-x86_64/vassc-4.1.0-21853.x86_64.rpm") # VASSC rpm package install.
         os.system("sudo systemctl restart pcscd")
         logger.debug("pcscd restarted")
@@ -444,6 +508,7 @@ backup_pam('/etc/pam.d/lightdm-greeter')# Backups for lightdm-greeter PAM file u
 backup_pam('/etc/pam.d/common-auth')# Backups for common-auth PAM file used in Ubuntu and Mint
 backup_pam('/usr/share/mdm/defaults.conf')# Backups for mdm/defaults.conf PAM file used in Ubuntu and Mint
 package_install()# install dependencies per OS
+pkcs11_config()# configure the pkcs11 library depending on which one exists
 vasd_config()
 check_displaymanagers()
 manipulate_pam_files('/etc/pam.d/password-auth', line_to_test) # Used in Cent/RHEL/OpenSuse for SSH and Lock-Screen (commented out until ssh issues are resolved) REMOVE THIS TO ENFORCE
