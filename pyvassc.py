@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-# Title:    Python 2.7 QAS Install
+#!/usr/bin/env python2.7
+# Title:    Python 3 QAS Install
 # Author:   Matthew Williams
 # Date:     2/22/2017
 # Latest Update:   4/12/2017
@@ -64,7 +64,7 @@ intro_text = """
 # or misconfiguration that may occur.
 """
 outro_text = """
-# The script is has completed!
+# The script has completed!
 #
 # No major errors were discovered during the configuration.
 ##################################################################
@@ -276,7 +276,7 @@ def check_displaymanagers (): # Check for display managers.
     if os.path.exists('/etc/selinux/config'):
         print("SELinux has been detected and must be disabled")
         print("Would you like to disable SELinux now?")
-        choice = raw_input().lower()
+        choice = raw_input.lower()
         if choice in yes:
             os.system("sudo sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' '/etc/selinux/config'")
             logger.info('SELINUX has been disabled or is already disabled')
@@ -375,7 +375,7 @@ def ask_continue (): # Verify if user wants to configure QAS and has the option 
     debug = set(['debug','d'])
     global debug_flag
     print("Would you like to configure QAS now?")
-    choice = raw_input().lower()
+    choice = raw_input.lower()
     if choice in yes:
         debug_flag is False
         return True
@@ -396,7 +396,7 @@ def remove (): # This function is called only when debugging is enabled to ask i
         yes = set(['yes','y', 'ye', ''])
         no = set(['no','n'])
         logger.info("***Would you like to remove QAS? (yes/no)***")
-        choice = raw_input().lower()
+        choice = raw_input.lower()
         if choice in yes:
             unconfigure('/etc/pam.d/login')
             unconfigure('/etc/pam.d/lightdm')
@@ -421,9 +421,10 @@ def remove (): # This function is called only when debugging is enabled to ask i
 
 def unconfigure (file_input): # This function performs the unconfiguration of the pam modules.
     if os.path.exists(file_input):
-        logger.debug in fileinput.input(file_input, inplace=True)
-        if not re.match(line_to_test, line):
-            sys.stdout.write (line)
+        logger.info('Unconfiguring ' + file_input) 
+        for line in fileinput.input(file_input, inplace=True): 
+            if not re.match(line_to_test, line): 
+                sys.stdout.write (line) 
 
 def installqas ():
     global debug_flag
@@ -432,7 +433,7 @@ def installqas ():
         yes = set(['yes','y', 'ye', ''])
         no = set(['no','n'])
         print("***Would you like to install QAS with debugging enabled? (yes/no)***")
-        choice = raw_input().lower() # Ask for Debug install
+        choice = raw_input.lower() # Ask for Debug install
         if choice in yes:
             if os.path.exists('./install.sh'):
                 os.system("sudo ./install.sh -a")
